@@ -15,15 +15,15 @@ def main():
     metadata = pd.read_csv(cfg.CSV_METADATA)
 
     # Voeg de CID toe: begin op basis van overstromingstype + scenarionummer
-    metadata["CID"] = metadata["Type overstroming"].map(cfg.CID_BEGIN_PER_TYPE) + metadata["Scenario ID"].astype(str)
+    metadata[cfg.KOL_CID] = metadata[cfg.KOL_TYPE].map(cfg.CID_BEGIN_PER_TYPE) + metadata[cfg.KOL_ID].astype(str)
 
     # Waarschuw als een scenario een onbekend overstromingstype heeft (dan is de CID leeg)
-    zonder_cid = metadata["CID"].isna().sum()
+    zonder_cid = metadata[cfg.KOL_CID].isna().sum()
     if zonder_cid > 0:
         print(f"LET OP: {zonder_cid} scenario's hebben een onbekend overstromingstype, dus geen CID")
 
     # Waarschuw voor dubbele CID's (hetzelfde scenario staat dan meer dan één keer in de lijst)
-    dubbel = metadata["CID"].duplicated().sum()
+    dubbel = metadata[cfg.KOL_CID].duplicated().sum()
     if dubbel > 0:
         print(f"LET OP: {dubbel} dubbele CID's (zelfde scenario meerdere keren in de lijst)")
 

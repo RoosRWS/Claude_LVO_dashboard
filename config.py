@@ -33,7 +33,6 @@ METADATA_LEEG_GETAL = [-999, -9999]  # Codes voor "geen waarde"
 WFS_BASIS = "https://basisinformatie-overstromingen.nl/geoserver/LIWO_Basis/wfs"  # WFS-adres
 WFS_KANSEN = {  # WFS-laagnaam -> lokaal GeoPackage-bestand
     "LIWO_Basis:overstromingskansen_actueel_2019_faalkans_primair": KANSEN_PRIMAIR_2019,  # Primair 2019
-    "LIWO_Basis:overstromingskansen_actueel_2025_faalkans_primair_Limburg": KANSEN_PRIMAIR_LIMBURG,  # Limburg (hoofdletter L)
     "LIWO_Basis:overstromingskansen_actueel_faalkans_niet_primair": KANSEN_NIET_PRIMAIR,  # Niet-primair
 }
 
@@ -304,5 +303,76 @@ GRID_X0 = -10000  # X-coördinaat linkerrand van het grid
 GRID_Y0 = 650000  # Y-coördinaat bovenrand van het grid
 GRID_KOLOMMEN = 12800  # Aantal kolommen van het grid
 MIN_NAT_PCT = 50  # Een cel telt alleen mee als meer dan dit % van de cel nat is
-SCHAAL_TOT_RESOLUTIE = 10  # Rasters met een Modelresolutie t/m dit aantal meter worden door de WCS verkleind naar 25 m (sneller, maar minder nauwkeurig)
+VERKLEIN_ALS_FIJNER_DAN = 25  # Rasters met een echte resolutie fijner dan dit (m) worden door de WCS verkleind naar 25 m (sneller, maar minder nauwkeurig)
 DIEPTE_MAP = DATA_MAP / "00b_diepte"  # Uitvoer van stap 00b: één parquet per scenario
+AANTAL_PARALLEL = 4  # Aantal downloads dat tegelijk loopt (te hoog kan de server of je geheugen overbelasten)
+
+# ---------------------------------------------------------------- stap 00c: download water van PDOK
+PDOK_WATER_URL = "https://api.pdok.nl/kadaster/brt-top10nl/ogc/v1/collections/waterdeel_vlak/items"  # Waterpolygonen BRT Top10NL
+WATER_TYPEN = ("meer, plas", "zee")  # Deze watertypes gaan helemaal mee (PDOK kan hier niet op filteren, dat doen we zelf)
+RIVIER_BREEDTES = ("50 - 125 meter", "> 125 meter")  # Van het type 'waterloop' gaan alleen de waterlopen van 50 m of breder mee
+WATER_BLOK = 5  # Water wordt eerst op blokjes van 5 m getekend, zodat we per 25 m-cel het % water kunnen tellen
+NL_GRENZEN = (-7000, 289000, 300000, 629000)  # Nederland in RD: xmin, ymin, xmax, ymax
+WATER_TEGEL = 25000  # Grootte van een tegel in meter (het gebied wordt in tegels opgehaald)
+TESTGEBIED = (118000, 483000, 126000, 489000)  # Stuk Amsterdam, voor een snelle test
+WATER_MAP = DATA_MAP / "00c_water"  # Uitvoer van stap 00c
+
+# ---------------------------------------------------------------- stap 00d: download overig (trajecten, keringen, breslocaties)
+OVERIG_MAP = DATA_MAP / "00d_overig"  # Uitvoer van stap 00d (parquet)
+BRESLOCATIES_GPKG = DATA_MAP / "breslocaties_LIWO.gpkg"  # Gedownloade breslocaties (alle vijf de lagen samen)
+WFS_BRESLOCATIES = {  # WFS-laagnaam -> overstromingstype (zelfde letters als in de metadata)
+    "LIWO_Basis:gebiedsindeling_doorbraaklocaties_buitendijks": "A",  # Buitendijks
+    "LIWO_Basis:gebiedsindeling_doorbraaklocaties_primair": "B",  # Primaire keringen
+    "LIWO_Basis:gebiedsindeling_doorbraaklocaties_regionaal": "C",  # Regionale keringen
+    "LIWO_Basis:gebiedsindeling_doorbraaklocaties_regionaalwatersysteem": "D",  # Regionaal systeem
+    "LIWO_Basis:gebiedsindeling_doorbraaklocaties_bovenregiostress": "BRS",  # Bovenregionale stresstest
+}
+
+# ---------------------------------------------------------------- kolomnamen in de metadata (complete_scenariolist.csv)
+# Alle scripts verwijzen hiernaar, zodat een naam maar op één plek aangepast hoeft te worden
+KOL_ID = "Scenario ID"  # Scenarionummer
+KOL_CID = "CID"  # Coverage-ID van de WCS (gemaakt in stap 00a)
+KOL_TYPE = "Type overstroming"  # A, B, C, D of BRS
+KOL_FREQUENTIE = "Overschrijdingsfrequentie"  # Herhalingstijd in jaren
+KOL_X = "x-coordinaten doorbraaklocatie"  # X in RD
+KOL_Y = "y-coordinaten doorbraaklocatie"  # Y in RD
+KOL_RESOLUTIE = "Modelresolutie"  # Resolutie van het model in meters
+KOL_SCHADE = "Totaal schade"  # Schade in euro's
+KOL_SLACHTOFFERS = "Totaal slachtoffers"  # Aantal slachtoffers
+
+# ---------------------------------------------------------------- stap 01a: overlap tussen scenario's
+METADATA_01A = DATA_MAP / "01a_metadata_LIWO.parquet"  # Uitvoer van stap 01a
+AANTAL_BUREN = 5  # Met hoeveel dichtstbijzijnde scenario's wordt de overlap vergeleken
+# Kolommen die stap 01a toevoegt
+KOL_MEESTE_OVERLAP_SCENARIO = "Meeste_overlap_scenario"  # Scenario ID van de buur met de meeste overlap
+KOL_OVERLAP = "Overlap_pct"  # Overlap met die buur in procenten
+KOL_VERSCHIL_SCHADE = "Verschil_schade_pct"  # Verschil in schade met die buur in procenten
+KOL_VERSCHIL_SLACHTOFFERS = "Verschil_slachtoffers_pct"  # Verschil in slachtoffers met die buur in procenten
+
+# ---------------------------------------------------------------- stap 01b: overlap met water
+WATER_MIN_PCT = 100  # Een watercel telt alleen als minstens dit % van de cel water is (100 = de hele cel)
+NAT_MIN_PCT = 100  # Een scenariocel telt alleen als minstens dit % van de cel overstroomd is (100 = de hele cel)
+KOL_WATER_OVERLAP = "Water_overlap_pct"  # Welk % van de natte cellen van het scenario is water
+
+# ---------------------------------------------------------------- stap 01c: kwaliteit per scenario
+METADATA_KWALITEIT = DATA_MAP / "01c_metadata_LIWO.parquet"  # Uitvoer van stap 01c (metadata + KI's)
+KOL_DATUM = "Scenariodatum"  # Datum van het scenario
+KOL_METHODE = "Berekeningsmethode"  # Bijv. 2d model, bakjesmodel
+KOL_LEEFTIJD = "Leeftijd"  # Leeftijd van het scenario in jaren (gemaakt in stap 01c)
+KOL_KI_LEEFTIJD = "KI_leeftijd"  # Kwaliteit van de leeftijd: 3 = goed, 2 = gemiddeld, 1 = matig, 0 = onbekend
+KOL_KI_SOFTWARE = "KI_software"  # Kwaliteit van de berekeningsmethode, zelfde klassen
+
+# ---------------------------------------------------------------- stap 02a: scenario's koppelen aan breslocaties
+BRESLOCATIES_PARQUET = OVERIG_MAP / "breslocaties.parquet"  # Breslocaties van LIWO (uit stap 00d)
+METADATA_02A = DATA_MAP / "02a_metadata_LIWO.parquet"  # Uitvoer van stap 02a (metadata + breslocatie)
+KOPPEL_AFSTAND_BRES_M = 1  # Een scenario hoort bij een breslocatie als die binnen deze afstand (m) ligt
+KOL_NAAM_BRES = "Naam doorbraaklocatie"  # Naam van de doorbraaklocatie in de metadata
+KOL_BRES_ID = "Bres_ID"  # Unieke ID van de breslocatie: type + id van LIWO, bijv. B_386
+KOL_BRES_AFSTAND = "Bres_afstand_m"  # Afstand tussen scenario en breslocatie in meters (leeg bij koppeling op naam)
+KOL_BRES_KOPPELING = "Bres_koppeling"  # Hoe is gekoppeld: "coördinaten" of "naam"
+
+# ---------------------------------------------------------------- stap 02b: kwaliteit per breslocatie
+KWALITEIT_BRES_GPKG = DATA_MAP / "02b_kwaliteit_bres.gpkg"  # Uitvoer van stap 02b: breslocaties met hun kwaliteit
+KOL_N_SCENARIOS = "n_scenarios"  # Aantal scenario's op de breslocatie
+KOL_FACTOR = "Factor_herhalingstijd"  # Hoogste herhalingstijd gedeeld door de laagste op de breslocatie
+KOL_KI_FREQUENTIE = "KI_frequentie"  # Kwaliteit van de spreiding van de herhalingstijd: 3 = goed, 2 = gemiddeld, 1 = matig, 0 = onbekend

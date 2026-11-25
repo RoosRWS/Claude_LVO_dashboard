@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LVO-dashboard</title>
+<!-- Leaflet (kaartbibliotheek) vanaf CDN -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  /* Basis: één lettertype (RWS-lettertype, anders Segoe UI) en drie groottes: 11px klein, 13px normaal, 16px groot */
+  html, body { margin: 0; height: 100%; font-family: "RijksoverheidSansWebText", "Segoe UI", Arial, sans-serif; font-size: 13px; color: #000; background: #fff; }
+  /* Blauwe RWS-header met geel lintblokje */
+  #header { height: 56px; background: #154273; color: #fff; display: flex; align-items: stretch; }
+  #header .lint { width: 14px; background: #F9E11E; }
+  #header .tekst { padding: 6px 16px; display: flex; flex-direction: column; justify-content: center; }
+  #header .org { font-size: 11px; opacity: .85; letter-spacing: .04em; }
+  #header .titel { font-size: 16px; font-weight: bold; }
+  /* Kaart vult de rest van het scherm */
+  #kaart { position: absolute; top: 56px; left: 0; right: 0; bottom: 0; }
+  /* Zwevend paneel rechtsboven: laagkeuze, achtergrond, zoeken, legenda */
+  #paneel { position: absolute; top: 68px; right: 12px; z-index: 1000; width: 250px; background: #fff;
+            border: 1px solid #c8c8c8; font-size: 13px; }
+  #paneel h3 { margin: 0; padding: 7px 10px; font-size: 13px; background: #F3F3F3; border-bottom: 1px solid #ddd; color: #154273; }
+  #paneel .blok { padding: 8px 10px; border-bottom: 1px solid #eee; }
+  #paneel label { display: block; padding: 2px 0; cursor: pointer; }
+  #paneel select, #paneel input[type=text] { width: 100%; box-sizing: border-box; padding: 4px; font: inherit; border: 1px solid #aaa; }
+  #zoekresultaten { list-style: none; margin: 4px 0 0; padding: 0; max-height: 180px; overflow-y: auto; }
+  #zoekresultaten li { padding: 3px 4px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+  #zoekresultaten li:hover { background: #e8f1f8; }
+  .klasse { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+  .vakje { width: 22px; height: 12px; border: 1px solid #666; flex: none; }
+  .klein { color: #535353; font-size: 11px; }
+  /* Kaart en popup: hetzelfde lettertype als de rest (Leaflet gebruikt anders Helvetica) */
+  .leaflet-container { font: inherit; }
+  /* Popup-opmaak */
+  .leaflet-popup-content-wrapper { border-radius: 0; }
+  .leaflet-popup-content { margin: 0; font-size: 13px; }
+  .pp-smal { width: 340px; }
+  .pp-breed { width: min(860px, 66vw); }
+  .pp-kop { background: #154273; color: #fff; padding: 8px 12px; }
+  .pp-type { font-size: 11px; opacity: .85; text-transform: uppercase; letter-spacing: .05em; }
+  .pp-titel { font-size: 16px; font-weight: bold; }
+  .pp-sub { font-size: 11px; opacity: .9; }
+  .pp-romp { padding: 8px 12px; max-height: min(380px, 50vh); overflow-y: auto; }
+  /* Liggende indeling: informatie links, kaart rechts */
+  .pp-twee { display: flex; height: min(400px, 52vh); }
+  .pp-links { width: 330px; flex: none; padding: 8px 12px; overflow-y: auto; box-sizing: border-box; }
+  .pp-rechts { flex: 1; min-width: 0; padding: 8px 12px 6px 0; display: flex; flex-direction: column; box-sizing: border-box; }
+  .pp-rechts .scroll { overflow-y: auto; flex: 1; }
+  #miniKaart { flex: 1; min-height: 0; border: 1px solid #c8c8c8; background: #eef2f5; position: relative; }
+  .kaart-legenda { background: rgba(255,255,255,.92); border: 1px solid #bbb; padding: 4px 6px; }
+  .kaart-legenda img { display: block; width: 80px; height: auto; }
+  .mini-melding { padding: 24% 12px 0; text-align: center; color: #535353; }
+  .pp-bron { font-size: 11px; color: #777; margin-top: 3px; }
+  .pp-kopje { font-weight: bold; color: #154273; margin: 6px 0 4px; }
+  .badge { display: inline-block; background: #F9E11E; color: #000; font-size: 11px; padding: 1px 6px; margin: 2px 0 4px; }
+  .ki-rij { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+  .totaal { display: flex; align-items: center; gap: 8px; font-size: 16px; margin: 4px 0 6px; }
+  /* i-knop en uitleg per indicator */
+  .i-knop { display: inline-block; width: 13px; height: 13px; padding: 0; margin-left: 3px; border: 1px solid #01689B;
+            border-radius: 50%; background: #fff; color: #01689B; font-family: inherit; font-weight: bold; font-size: 11px; line-height: 12px; text-align: center; cursor: pointer;
+            vertical-align: super; position: relative; top: -1px; }
+  .i-knop:hover, .i-knop.aan { background: #01689B; color: #fff; }
+  .ki-info { display: none; margin: 2px 0 6px; padding: 6px 8px; background: #F3F3F3; border-left: 3px solid #01689B; }
+  .ki-info.open { display: block; }
+  .ki-info ul { margin: 4px 0 0; padding: 0; list-style: none; }
+  .ki-info li { padding: 1px 0; }
+  .ki-info li b { display: inline-block; min-width: 18px; color: #154273; }
+  .ki-info .concept { color: #8a6d00; font-style: italic; margin-top: 4px; font-size: 11px; }
+  /* Sterren: grijze laag eronder, gele laag erboven met breedte = score */
+  .sterren { position: relative; display: inline-block; line-height: 1; letter-spacing: 1px; white-space: nowrap; }
+  .sterren .leeg { color: #d4d4d4; }
+  .sterren .vol { position: absolute; left: 0; top: 0; overflow: hidden; color: #F9E11E; -webkit-text-stroke: .6px #8a7700; }
+  /* Beoordeling in 3 klassen: gekleurd label (matig / gemiddeld / goed) */
+  .oordeel { display: inline-block; padding: 1px 7px; border-radius: 10px; white-space: nowrap; }
+  .oordeel.groot { font-size: 16px; padding: 3px 10px; }
+  .getal { color: #535353; min-width: 22px; display: inline-block; text-align: right; }
+  /* Klein gekleurd blokje voor de beoordeling in de scenariotabel */
+  .blokje { display: inline-block; width: 14px; height: 14px; vertical-align: middle; }
+  /* Tabellen in de popup */
+  table.info { border-collapse: collapse; width: 100%; }
+  table.info td { padding: 2px 4px; border-bottom: 1px solid #eee; vertical-align: top; }
+  table.info td:first-child { color: #535353; width: 42%; }
+  table.scen { border-collapse: collapse; width: 100%; }
+  table.scen th { text-align: left; font-weight: normal; color: #535353; border-bottom: 1px solid #ccc; padding: 3px 4px; position: sticky; top: 0; background: #fff; vertical-align: bottom; }
+  table.scen td { padding: 3px 4px; border-bottom: 1px solid #eee; white-space: nowrap; }
+  table.scen tr.klik { cursor: pointer; }
+  table.scen tr.klik:hover { background: #e8f1f8; }
+  /* Navigatiebalk onderaan de popup */
+  .pp-nav { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: #F3F3F3; border-top: 1px solid #ddd; }
+  .pp-nav button { background: #01689B; color: #fff; border: 0; padding: 4px 10px; font: inherit; cursor: pointer; }
+  .pp-nav button:disabled { background: #b5c9d6; cursor: default; }
+  .pp-nav .wit { background: #fff; color: #01689B; border: 1px solid #01689B; }
+</style>
+</head>
+<body>
+<!-- Header -->
+<div id="header"><div class="lint"></div><div class="tekst">
+  <span class="org">Rijkswaterstaat</span>
+  <span class="titel">LVO-dashboard &ndash; Kwaliteit overstromingsscenario's</span>
+</div></div>
+<!-- Kaart -->
+<div id="kaart"></div>
+<!-- Zwevend paneel -->
+<div id="paneel">
+  <h3>Kaartlagen</h3>
+  <div class="blok" id="laagkeuze"></div>
+  <h3>Overstromingstype</h3>
+  <div class="blok"><div id="typefilter"></div><div class="klein" id="typetelling" style="margin-top:3px"></div>
+    <div class="klein">Filtert de breslocaties</div></div>
+  <div class="blok"><span class="klein">Achtergrondkaart</span><select id="achtergrond"></select></div>
+  <div class="blok"><input type="text" id="zoek" placeholder="Zoek op naam of ID..."><ul id="zoekresultaten"></ul></div>
+  <div class="blok" id="legenda"></div>
+</div>
+
+<script>
+// ------------------------------------------------------------ data (wordt door Python ingevuld)
+const DATA = /*__DATA__*/null;  // Alle lagen, scenario's en instellingen
+
+// ------------------------------------------------------------ hulpfuncties
+function esc(t) {  // Tekst veilig maken voor HTML
+  return String(t ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));  // Tekens vervangen
+}
+function getal(x) {  // Score als Nederlands getal (komma)
+  return (Math.round(x * 10) / 10).toString().replace(".", ",");  // 1 decimaal, komma
+}
+function sterren(score, grootte) {  // HTML voor sterren (ook gedeeltelijke sterren)
+  const pct = Math.max(0, Math.min(100, score / 5 * 100));  // Percentage gevuld
+  const stijl = grootte ? `font-size:${grootte}px` : "font-size:16px";  // Lettergrootte
+  return `<span class="sterren" style="${stijl}"><span class="leeg">★★★★★</span>` +  // Grijze sterren
+         `<span class="vol" style="width:${pct}%">★★★★★</span></span>`;  // Gele sterren tot score
+}
+// Welke soort beoordeling het dashboard toont (BEOORDELING in config.py)
+const DRIE_KLASSEN = DATA.beoordeling === "3_klassen";
+
+// Herhalingstijd als leesbaar getal, bijv. 10000 -> "10.000"
+function jaren(x) {
+  return x === null || x === undefined ? null : Number(x).toLocaleString("nl-NL");
+}
+
+// Naam en kleur van een score in 3 klassen; 0 of leeg is onbekend (grijs)
+function klasseInfo(score) {
+  if (score === null || score === undefined || score === 0) return { label: "Onbekend", kleur: "#D9D9D9" };
+  return klasseVan(score);
+}
+
+// Gekleurd label voor een score in 3 klassen (alleen de naam, geen getal); zachte kleuren, dus donkere tekst
+function oordeel(score, groot) {
+  const k = klasseInfo(score);
+  return `<span class="oordeel${groot ? " groot" : ""}" style="background:${k.kleur};color:#1a1a1a">${k.label}</span>`;
+}
+
+// Rustiger variant voor de scenariotabel: alleen een gekleurd blokje (de naam verschijnt bij aanwijzen met de muis)
+function blokje(score) {
+  const k = klasseInfo(score);
+  return `<span class="blokje" style="background:${k.kleur}" title="${k.label}"></span>`;
+}
+
+// Toon een score als sterren of als gekleurd label, afhankelijk van de gekozen beoordeling
+function waardering(score, groot) {
+  if (DRIE_KLASSEN) return oordeel(score, groot);
+  const waarde = score ?? 0;
+  return `${sterren(waarde, groot ? 26 : null)} <span class="getal"${groot ? ' style="font-size:16px"' : ""}>${getal(waarde)}</span>`;
+}
+
+function klasseVan(score) {  // Scoreklasse (met kleur en label) voor een score
+  const k = DATA.klassen;  // Lijst met klassen
+  for (let i = k.length - 1; i >= 0; i--) if (score >= k[i].van) return k[i];  // Hoogste klasse waarvan de ondergrens gehaald is
+  return k[0];  // Terugval: laagste klasse
+}
+function kleur(score) {  // Kleur van de klasse waarin de score valt
+  if (score === null || score === undefined) return "#BDBDBD";  // Geen scenario's gekoppeld: grijs
+  return klasseVan(score).kleur;  // Klassekleur
+}
+function kiRijen(scores, zonder = []) {  // Rijen met label, i-knop en beoordeling per KI; 'zonder' = KI's die je overslaat
+  return DATA.kiLabels.map((lab, i) => zonder.includes(i) ? "" :  // Overgeslagen KI: geen rij
+    `<div class="ki-rij"><span>${esc(lab)}<button class="i-knop" id="iKnop${i}" title="Hoe is deze indicator bepaald?" onclick="toggleInfo(${i}, event)">i</button></span>` +
+    `<span>${waardering(scores[i])}</span></div>` +  // Rij met sterren of label
+    infoBlok(i)  // Uitleg (verborgen tot op de i-knop geklikt wordt)
+  ).join("");  // Samenvoegen
+}
+function infoBlok(i) {  // Verborgen uitlegblok voor indicator i
+  const inf = DATA.kiInfo[i] || {};  // Uitleg uit config.py
+  // Regels van de schaal: bij 3 klassen een gekleurd label, anders het aantal sterren
+  const schaal = (inf.schaal || []).map(r =>
+    `<li>${DRIE_KLASSEN ? oordeel(Number(r[0]), false) : `<b>${esc(r[0])}★</b>`} ${esc(r[1])}</li>`).join("");
+  return `<div class="ki-info" id="kiInfo${i}"><b>${esc(DATA.kiLabels[i])}</b><br>${esc(inf.wat || "Geen uitleg beschikbaar.")}` +
+         (schaal ? `<ul>${schaal}</ul>` : "") +  // Schaal
+         `<div class="klein" style="margin-top:4px">${DRIE_KLASSEN ? "Beoordeling in 3 klassen: matig, gemiddeld of goed." : "Score van 0 (laag) tot 5 sterren (hoog)."} ` +
+         `Bij een gemiddelde wordt dezelfde indicator gemiddeld; onbekend telt niet mee.</div>` +  // Algemene uitleg
+         (DATA.kiInfoConcept ? `<div class="concept">Concept-uitleg: afgeleid uit de data, nog niet bevestigd.</div>` : "") + `</div>`;  // Concept-melding
+}
+function toggleInfo(i, ev) {  // Uitleg bij een indicator open/dicht zetten
+  if (ev) ev.stopPropagation();  // Klik niet doorgeven aan de kaart
+  const blok = document.getElementById("kiInfo" + i);  // Uitlegblok
+  const knop = document.getElementById("iKnop" + i);  // i-knop
+  if (!blok) return;  // Bestaat niet (meer)
+  blok.classList.toggle("open");  // Tonen of verbergen
+  knop.classList.toggle("aan", blok.classList.contains("open"));  // Knop markeren
+}
+function infoTabel(obj) {  // Tabel met sleutel/waarde-paren
+  return `<table class="info">` + Object.entries(obj).map(([k, v]) =>  // Per paar
+    `<tr><td>${esc(k)}</td><td>${v === null || v === undefined || v === "" ? "<i>onbekend</i>" : esc(v)}</td></tr>`  // Eén rij
+  ).join("") + `</table>`;  // Afsluiten
+}
+
+// ------------------------------------------------------------ kaart en achtergrond
+const kaart = L.map("kaart", { zoomControl: true, preferCanvas: true }).setView(DATA.centrum, DATA.zoom);  // Kaart aanmaken
+const tekenaar = L.canvas({ tolerance: 6 });  // Canvas-renderer: snel en makkelijk klikken op dunne lijnen
+let achtergrondLaag = null;  // Huidige achtergrond
+function zetAchtergrond(naam) {  // Achtergrond wisselen
+  if (achtergrondLaag) kaart.removeLayer(achtergrondLaag);  // Oude weg
+  achtergrondLaag = L.tileLayer(DATA.pdok[naam], { maxZoom: 19, minZoom: 6, attribution: "Kaartgegevens &copy; Kadaster / PDOK" }).addTo(kaart);  // Nieuwe erbij
+}
+const selAchter = document.getElementById("achtergrond");  // Keuzelijst achtergrond
+Object.keys(DATA.pdok).forEach(n => selAchter.add(new Option(n, n)));  // Opties vullen
+selAchter.onchange = () => zetAchtergrond(selAchter.value);  // Bij wijzigen wisselen
+zetAchtergrond(Object.keys(DATA.pdok)[0]);  // Start met de eerste (grijs)
+
+// ------------------------------------------------------------ lagen
+const lagen = {};  // Gebouwde Leaflet-lagen (lui opgebouwd)
+const index = {};  // Per laag: id -> Leaflet-object (voor zoeken); bevat bij breslocaties alleen wat het filter doorlaat
+const zichtbaar = new Set();  // Namen van de lagen die nu op de kaart staan (er mogen er meerdere tegelijk zijn)
+const gekozenTypen = new Set(Object.keys(DATA.typeLabels));  // Aangevinkte overstromingstypen (start: alle)
+const hoverTip = L.tooltip({ direction: "top", offset: [0, -6] });  // Eén gedeelde tooltip
+
+function typeToegestaan(typen) {  // Heeft een breslocatie minstens één scenario van een aangevinkt type?
+  return [...String(typen || "")].some(t => gekozenTypen.has(t));  // Letters van de typen vergelijken
+}
+function stijl(laag, f) {  // Standaardstijl per feature
+  const k = kleur(f.properties.score);  // Kleur op score (grijs zonder scenario's)
+  return { color: k, weight: 3, opacity: 0.95, renderer: tekenaar };  // Lijnen
+}
+function bouwLaag(laag) {  // Leaflet-laag maken uit GeoJSON
+  index[laag] = {};  // Lege index
+  const opties = {
+    style: f => stijl(laag, f),  // Stijl voor lijnen/vlakken
+    pointToLayer: (f, ll) => L.circleMarker(ll, {  // Breslocaties als cirkels
+      renderer: tekenaar, radius: 4 + Math.min(f.properties.n - 1, 5),  // Groter bij meer scenario's
+      color: "#333", weight: 1, fillColor: kleur(f.properties.score), fillOpacity: 0.9 }),  // Kleur op score
+    onEachFeature: (f, l) => { index[laag][f.properties.id] = l; },  // In index opnemen
+  };
+  if (laag === "breslocaties") opties.filter = f => typeToegestaan(f.properties.typen);  // Typefilter
+  const gj = L.geoJSON(DATA.lagen[laag], opties);  // Laag bouwen
+  gj.on("mouseover", e => {  // Tooltip bij hover
+    const p = e.layer.feature.properties;  // Eigenschappen
+    hoverTip.setContent(esc(p.naam) + (p.n ? ` (${p.n} scenario${p.n > 1 ? "'s" : ""})` : "")).setLatLng(e.latlng).addTo(kaart);  // Tonen
+  });
+  gj.on("mousemove", e => hoverTip.setLatLng(e.latlng));  // Tooltip volgt de muis
+  gj.on("mouseout", () => kaart.removeLayer(hoverTip));  // Tooltip weg
+  gj.on("click", e => { L.DomEvent.stopPropagation(e); selecteer(laag, e.layer, e.latlng); });  // Klik -> popup
+  return gj;  // Laag teruggeven
+}
+function breslocatiesBovenop() {  // Breslocaties altijd bovenop, zodat ze klikbaar blijven boven lijnen
+  if (zichtbaar.has("breslocaties") && lagen.breslocaties) lagen.breslocaties.bringToFront();  // Naar voren
+}
+function zetLaag(laag, aan) {  // Een laag aan- of uitzetten (andere lagen blijven staan)
+  if (aan) {  // Aanzetten
+    if (!lagen[laag]) lagen[laag] = bouwLaag(laag);  // Eerste keer opbouwen
+    lagen[laag].addTo(kaart);  // Tonen
+    zichtbaar.add(laag);  // Onthouden
+  } else {  // Uitzetten
+    if (sel && sel.laag === laag) kaart.closePopup();  // Popup van deze laag sluiten
+    if (lagen[laag]) kaart.removeLayer(lagen[laag]);  // Laag weg
+    zichtbaar.delete(laag);  // Vergeten
+  }
+  breslocatiesBovenop();  // Volgorde herstellen
+  zoekVeld.value = "";  // Zoekveld leeg
+  zoekLijst.innerHTML = "";  // Resultaten leeg
+  tekenLegenda();  // Legenda bijwerken
+}
+const laagkeuze = document.getElementById("laagkeuze");  // Container aanvinkvakjes
+Object.entries(DATA.laagLabels).forEach(([k, lab]) => {  // Per laag een aanvinkvakje
+  laagkeuze.insertAdjacentHTML("beforeend", `<label><input type="checkbox" name="laag" value="${k}" ${k === "breslocaties" ? "checked" : ""}> ${esc(lab)}</label>`);  // Vakje
+});
+laagkeuze.onchange = e => zetLaag(e.target.value, e.target.checked);  // Aan/uit bij klik
+
+const typefilter = document.getElementById("typefilter");  // Container typefilter
+Object.entries(DATA.typeLabels).forEach(([k, lab]) => {  // Per overstromingstype een aanvinkvakje
+  typefilter.insertAdjacentHTML("beforeend", `<label><input type="checkbox" name="type" value="${k}" checked> ${esc(lab)}</label>`);  // Vakje
+});
+function telBreslocaties() {  // Aantal zichtbare breslocaties bijwerken
+  const alle = DATA.lagen.breslocaties.features;  // Alle breslocaties
+  const n = alle.filter(f => typeToegestaan(f.properties.typen)).length;  // Doorgelaten door het filter
+  document.getElementById("typetelling").textContent = `${n} van ${alle.length} breslocaties`;  // Tonen
+}
+typefilter.onchange = e => {  // Filter gewijzigd
+  if (e.target.checked) gekozenTypen.add(e.target.value); else gekozenTypen.delete(e.target.value);  // Type aan/uit
+  kaart.closePopup();  // Open popup sluiten (de locatie kan wegvallen)
+  const aan = zichtbaar.has("breslocaties");  // Staat de laag aan?
+  if (lagen.breslocaties && aan) kaart.removeLayer(lagen.breslocaties);  // Oude laag weg
+  lagen.breslocaties = bouwLaag("breslocaties");  // Opnieuw bouwen met het filter
+  if (aan) { lagen.breslocaties.addTo(kaart); breslocatiesBovenop(); }  // Terugzetten
+  zoekVeld.oninput();  // Zoekresultaten bijwerken
+  telBreslocaties();  // Telling bijwerken
+};
+
+function tekenLegenda() {  // Legenda met klassen voor de zichtbare lagen
+  const legenda = document.getElementById("legenda");  // Container
+  if (!zichtbaar.size) { legenda.innerHTML = `<span class="klein">Geen kaartlaag aangevinkt</span>`; return; }  // Niets zichtbaar
+  const heeftBres = zichtbaar.has("breslocaties");  // Breslocaties zichtbaar?
+  const heeftLijn = [...zichtbaar].some(l => l !== "breslocaties");  // Lijnlagen zichtbaar?
+  const titel = heeftBres && heeftLijn ? "Totaalscore (breslocaties) en gemiddelde score (lijnen)" :
+                heeftBres ? "Totaalscore" : "Gemiddelde score";  // Titel
+  const rijen = DATA.klassen.slice().reverse().map(k =>  // Hoogste klasse bovenaan
+    `<div class="klasse"><span class="vakje" style="background:${k.kleur}"></span>${esc(k.label)}</div>`).join("");  // Eén regel per klasse
+  legenda.innerHTML =
+    `<span class="klein">${titel}</span>` + rijen +  // Kop en klassen
+    (heeftLijn ? `<div class="klasse"><span class="vakje" style="background:#BDBDBD"></span>Geen scenario's gekoppeld</div>` : "") +  // Grijs
+    `<div class="klein" style="margin-top:4px">Ondergrens telt mee in de klasse. Totaalscore = gemiddelde van de indicatoren; onbekend telt niet mee.</div>` +  // Uitleg
+    (heeftBres ? `<div class="klein">Grotere cirkel = meer scenario's</div>` : "");  // Uitleg grootte
+}
+
+// ------------------------------------------------------------ selectie en popup
+let sel = null;  // Huidige selectie: {laag, layer, pagina}
+const popup = L.popup({ maxWidth: 1000, minWidth: 340, autoPanPaddingTopLeft: [20, 70], autoPanPaddingBottomRight: [280, 20] });  // Eén popup (breedte volgt de inhoud)
+popup.on("remove", () => {  // Bij sluiten highlight weg
+  sluitMini();  // Minikaart opruimen
+  if (sel) herstelStijl(sel);  // Highlight van het gesloten item weg
+  sel = null;  // Niets meer geselecteerd
+});
+
+function herstelStijl(s) {  // Highlight van een selectie weghalen
+  lagen[s.laag].resetStyle(s.layer);  // Terug naar standaardstijl
+}
+function selecteer(laag, layer, latlng) {  // Item selecteren en popup openen
+  if (sel && sel.layer !== layer) herstelStijl(sel);  // Vorige highlight weg
+  const p = layer.feature.properties;  // Eigenschappen
+  const loc = laag === "breslocaties" ? DATA.locaties[p.id] : null;  // Scenario's (alleen breslocaties)
+  sel = { laag, layer, pagina: loc && loc.scenarios.length > 1 ? 0 : 1 };  // Start op overview (of scenario 1)
+  layer.setStyle(laag === "breslocaties" ? { color: "#154273", weight: 4 } : { color: "#154273", weight: 7 });  // Donkerblauwe highlight
+  if (layer.bringToFront) layer.bringToFront();  // Bovenop tekenen
+  const plek = latlng || (layer.getLatLng ? layer.getLatLng() : layer.getBounds().getCenter());  // Positie popup
+  popup.setLatLng(plek);  // Positie zetten
+  toonPopup(true);  // Inhoud tonen en popup openen (een open popup ter plekke verversen voorkomt een sluit/open-cyclus die de selectie wist)
+}
+function ga(naar, ev) {  // Naar een pagina in de popup (0 = overview)
+  if (ev) ev.stopPropagation();  // Klik niet doorgeven: de knop wordt zo vervangen en Leaflet zou de klik anders als kaartklik zien en de popup sluiten
+  if (!sel) return;  // Niets geselecteerd
+  sel.pagina = naar;  // Pagina zetten
+  toonPopup(false);  // Opnieuw tekenen (incl. minikaart)
+}
+
+function popupHtml() {  // Volledige popup-inhoud voor de selectie
+  const p = sel.layer.feature.properties;  // Eigenschappen
+  if (sel.laag !== "breslocaties") return popupGemiddeld(p);  // Lijnen en vlakken
+  const loc = DATA.locaties[p.id];  // Scenario's van deze locatie
+  const n = loc.scenarios.length;  // Aantal scenario's
+  const kop = `<div class="pp-kop"><div class="pp-type">Breslocatie &middot; ${n} scenario${n > 1 ? "'s" : ""}</div>` +
+              `<div class="pp-titel">${esc(p.naam)}</div><div class="pp-sub">${esc(p.gebied)}${p.buitenwater ? " &middot; " + esc(p.buitenwater) : ""}</div></div>`;  // Kop
+  const body = sel.pagina === 0 ? overviewHtml(loc) : scenarioHtml(loc.scenarios[sel.pagina - 1], sel.pagina, n);  // Links + rechts
+  return `<div class="pp-breed">${kop}<div class="pp-twee">${body}</div>${n > 1 ? navHtml(n) : ""}</div>`;  // Samenvoegen
+}
+function overviewHtml(loc) {  // Overview bij meerdere scenario's: totaal links, scenariotabel rechts
+  const ov = loc.overview;  // Gemiddelden over de scenario's
+  let links = `<div class="klein">Gemiddelde over ${loc.scenarios.length} scenario's</div>`;  // Uitleg
+  links += `<div class="pp-kopje">Totaalscore</div><div class="totaal">${waardering(ov.totaal, true)}</div>`;  // Totaal
+  links += `<div class="pp-kopje">Per indicator</div>` + kiRijen(ov.ki);  // Per KI
+  // Welke indicatoren in de tabel komen (sommige zijn per breslocatie gelijk en staan alleen links)
+  const inTabel = DATA.kiLabels.map((_, i) => i).filter(i => !DATA.kiNietInTabel.includes(i));
+  // Tabelkop: nummer, datum, herhalingstijd en de indicatoren (voluit)
+  let rechts = `<div class="pp-kopje" style="margin-top:0">Scenario's (klik om te openen)</div><div class="scroll"><table class="scen">` +
+       `<tr><th>#</th><th>Datum</th><th>Herhalingstijd (jaar)</th>` +
+       inTabel.map(i => `<th>${esc(DATA.kiLabels[i])}</th>`).join("") + `</tr>`;
+  // Per scenario een rij met gekleurde blokjes; klikken opent dat scenario
+  loc.scenarios.forEach((s, nr) => {
+    rechts += `<tr class="klik" onclick="ga(${nr + 1}, event)"><td>${nr + 1}</td><td>${esc(s.datum ?? "?")}</td>` +
+         `<td>${esc(jaren(s.herhalingstijd) ?? "?")}</td>` +
+         inTabel.map(i => `<td>${DRIE_KLASSEN ? blokje(s.ki[i]) : s.ki[i] + " ★"}</td>`).join("") + `</tr>`;
+  });
+  rechts += `</table></div>`;  // Tabel afsluiten
+  return `<div class="pp-links">${links}</div><div class="pp-rechts">${rechts}</div>`;  // Twee kolommen
+}
+function scenarioHtml(s, nr, n) {  // Eén scenario: informatie links, interactieve kaart rechts
+  let links = n > 1 ? `<div class="pp-kopje" style="margin-top:0">Scenario ${nr} van ${n}</div>` : "";  // Titel bij meerdere
+  links += `<div class="pp-kopje">${DRIE_KLASSEN ? "Beoordeling" : "Sterrenbeoordeling"}</div>` + kiRijen(s.ki, DATA.kiNietInTabel);  // Echte scores, zonder spreiding herhalingstijd
+  links += `<div class="pp-kopje">Scenario-informatie</div>` + infoTabel({  // Eigenschappen
+    "Scenario-ID": s.id, "Naam in scenario": s.naam, "Datum": s.datum, "Leeftijd (jaar)": s.leeftijd,
+    "Herhalingstijd (jaar)": jaren(s.herhalingstijd),
+    "Duur": s.duur, "Software": s.software, "Bodemhoogte": s.bodemhoogte,
+    "Modelresolutie (m)": s.resolutie, "Berekeningsmethode": s.methode,
+  });  // Tabel
+  return `<div class="pp-links">${links}</div><div class="pp-rechts">${kaartHtml(s)}</div>`;  // Twee kolommen
+}
+function kaartHtml(s) {  // Container voor de interactieve kaart met waterdiepte
+  if (!s.ws || !s.bbox) return `<div id="miniKaart"><div class="mini-melding">Geen waterdieptekaart beschikbaar voor dit scenario</div></div>`;  // Geen WMS-gegevens
+  return `<div id="miniKaart"></div>` +  // Kaart (wordt door initMini gevuld)
+         `<div class="pp-bron">Waterdiepte: LIWO / Rijkswaterstaat &middot; achtergrond: Kadaster / PDOK &middot; sleep en zoom om te bekijken</div>`;  // Bronvermelding
+}
+let miniKaart = null;  // Leaflet-kaartje in de popup (of null)
+function sluitMini() {  // Minikaart netjes opruimen
+  if (miniKaart) { miniKaart.remove(); miniKaart = null; }  // Kaart en listeners weg
+}
+function initMini() {  // Interactieve kaart opbouwen als de popup een scenario met WMS toont
+  sluitMini();  // Eerst een eventuele oude weg
+  const el = document.getElementById("miniKaart");  // Container in de popup
+  if (!el || !sel || sel.laag !== "breslocaties" || sel.pagina < 1) return;  // Geen kaartje nodig
+  const s = DATA.locaties[sel.layer.feature.properties.id].scenarios[sel.pagina - 1];  // Huidig scenario
+  if (!s.ws || !s.bbox) return;  // Geen WMS-gegevens
+  miniKaart = L.map(el, { zoomControl: true, attributionControl: false, scrollWheelZoom: true });  // Interactieve kaart
+  L.tileLayer(DATA.pdok[selAchter.value], { maxZoom: 19 }).addTo(miniKaart);  // Zelfde achtergrond als de hoofdkaart
+  const wms = L.tileLayer.wms(`${DATA.wmsBasis}/${s.ws}/scenario_${s.id}/wms`, {  // WMS van dit scenario
+    layers: `scenario_${s.id}`, styles: "", format: "image/png", transparent: true, version: "1.3.0", opacity: 0.9 });  // Waterdiepte
+  wms.on("tileerror", () => {  // Server geeft geen kaartje
+    if (!el.querySelector(".mini-melding")) el.insertAdjacentHTML("beforeend", `<div class="mini-melding" style="position:absolute;inset:0;z-index:500;background:rgba(238,242,245,.85)">Waterdieptekaart kon niet geladen worden</div>`);  // Melding
+  });
+  wms.addTo(miniKaart);  // Laag toevoegen
+  const leg = L.control({ position: "bottomleft" });  // Legenda als kaartonderdeel
+  leg.onAdd = () => {  // Legenda opbouwen
+    const d = L.DomUtil.create("div", "kaart-legenda");  // Container
+    d.innerHTML = `<div class="klein">Waterdiepte (m)</div><img alt="legenda" onerror="this.style.display='none'" ` +
+      `src="https://geodata.basisinformatie-overstromingen.nl/geoserver/${s.ws}/scenario_${s.id}/ows?service=WMS&version=1.3.0&request=GetLegendGraphic&format=image%2Fpng&width=20&height=20&layer=scenario_${s.id}&style=liwo_waterdiepte_band1">`;  // Legenda van de server
+    return d;  // Teruggeven
+  };
+  leg.addTo(miniKaart);  // Toevoegen
+  miniKaart.fitBounds([[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]], { padding: [6, 6] });  // Inzoomen op het scenariogebied
+  const ll = sel.layer.getLatLng();  // Positie van de breslocatie
+  L.circleMarker(ll, { radius: 6, color: "#000", weight: 2, fillColor: "#F9E11E", fillOpacity: 1 }).bindTooltip("Breslocatie").addTo(miniKaart);  // Breslocatie markeren
+  miniKaart.invalidateSize();  // Afmetingen opnieuw bepalen nu de popup zichtbaar is
+  miniKaart.fitBounds([[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]], { padding: [6, 6] });  // Opnieuw inpassen met de juiste afmetingen
+}
+function toonPopup(openen) {  // Popup-inhoud (opnieuw) tekenen en minikaart opbouwen
+  sluitMini();  // Oude minikaart weg vóór de inhoud vervangen wordt
+  popup.setContent(popupHtml());  // Inhoud zetten
+  if (openen && !popup.isOpen()) popup.openOn(kaart);  // Openen als hij nog dicht is
+  initMini();  // Minikaart opbouwen
+  clearTimeout(toonPopup.t);  // Eerdere vertraagde correctie annuleren
+  toonPopup.t = setTimeout(() => { if (popup.isOpen() && popup._adjustPan) popup._adjustPan(); }, 450);  // Na een zoom-/pananimatie de popup alsnog volledig in beeld schuiven
+}
+function navHtml(n) {  // Navigatie onder de popup
+  const p = sel.pagina;  // Huidige pagina
+  return `<div class="pp-nav">` +
+    `<button onclick="ga(${p - 1}, event)" ${p <= 0 ? "disabled" : ""}>&lsaquo; Vorige</button>` +  // Vorige
+    `<button class="wit" onclick="ga(0, event)" ${p === 0 ? "disabled" : ""}>Overzicht</button>` +  // Terug naar overview
+    `<span class="klein">${p === 0 ? "overzicht" : p + " / " + n}</span>` +  // Positie
+    `<button onclick="ga(${p + 1}, event)" ${p >= n ? "disabled" : ""}>Volgende &rsaquo;</button></div>`;  // Volgende
+}
+function popupGemiddeld(p) {  // Popup voor trajecten en keringen (smal, één kolom)
+  const typen = { trajecten: "Primair dijktraject", keringen: "Niet-primaire kering" };  // Labels
+  const soort = (DATA.koppelTypen[sel.laag] || []).join(" en ");  // Overstromingstypen die meetellen
+  let midden;  // Gemiddelde scores of melding
+  if (p.ki && p.n > 0) {  // Er zijn gekoppelde scenario's
+    midden = `<div class="klein">Gemiddelde over ${p.n} scenario${p.n > 1 ? "'s" : ""} (type ${esc(soort)}) van breslocaties binnen ${DATA.koppelAfstand} m van deze lijn</div>` +
+             `<div class="pp-kopje">Totaalscore</div><div class="totaal">${waardering(p.score, true)}</div>` +
+             `<div class="pp-kopje">Per indicator</div>` + kiRijen(p.ki);  // Totaal en gemiddelden per KI
+  } else {  // Niets gekoppeld
+    midden = `<div class="pp-kopje">Gemiddelde score</div><div class="klein">Geen scenario's (type ${esc(soort)}) gekoppeld: ` +
+             `geen breslocatie binnen ${DATA.koppelAfstand} m van deze lijn.</div>`;  // Melding
+  }
+  return `<div class="pp-smal"><div class="pp-kop"><div class="pp-type">${typen[sel.laag]}</div><div class="pp-titel">${esc(p.naam)}</div></div>` +  // Kop
+         `<div class="pp-romp">${midden}` +  // Scores
+         `<div class="pp-kopje">Informatie</div>` + infoTabel(p.info) + `</div></div>`;  // Attributen
+}
+
+// ------------------------------------------------------------ zoeken
+const zoekVeld = document.getElementById("zoek");  // Invoerveld
+const zoekLijst = document.getElementById("zoekresultaten");  // Resultatenlijst
+zoekVeld.oninput = () => {  // Bij typen
+  const q = zoekVeld.value.trim().toLowerCase();  // Zoekterm
+  zoekLijst.innerHTML = "";  // Leegmaken
+  if (q.length < 2) return;  // Pas vanaf 2 tekens
+  const hits = [];  // Resultaten uit alle zichtbare lagen
+  zichtbaar.forEach(laag => {  // Per zichtbare laag
+    DATA.lagen[laag].features.forEach(f => {  // Per feature
+      if (!index[laag] || !index[laag][f.properties.id]) return;  // Valt buiten het filter
+      if (String(f.properties.naam).toLowerCase().includes(q) || String(f.properties.id).toLowerCase().includes(q)) hits.push({ laag, f });  // Match
+    });
+  });
+  hits.slice(0, 15).forEach(({ laag, f }) => {  // Per resultaat een regel (max 15)
+    const li = document.createElement("li");  // Lijstitem
+    li.textContent = f.properties.naam + (f.properties.n ? ` (${f.properties.n})` : "") +
+                     (zichtbaar.size > 1 ? ` · ${DATA.laagLabels[laag]}` : "");  // Tekst, met laagnaam bij meerdere lagen
+    li.onclick = () => {  // Klik op resultaat
+      const l = index[laag][f.properties.id];  // Leaflet-object
+      if (l.getLatLng) kaart.setView(l.getLatLng(), 13); else kaart.fitBounds(l.getBounds(), { maxZoom: 13 });  // Inzoomen
+      selecteer(laag, l, null);  // Popup openen
+      zoekLijst.innerHTML = "";  // Lijst sluiten
+    };
+    zoekLijst.appendChild(li);  // Toevoegen
+  });
+  if (!hits.length) zoekLijst.innerHTML = `<li class="klein">Geen resultaten</li>`;  // Niets gevonden
+};
+
+// ------------------------------------------------------------ start
+L.DomEvent.disableClickPropagation(document.getElementById("paneel"));  // Klikken in paneel niet doorgeven aan kaart
+L.DomEvent.disableScrollPropagation(document.getElementById("paneel"));  // Scrollen in paneel zoomt de kaart niet
+zetLaag("breslocaties", true);  // Starten met breslocaties
+telBreslocaties();  // Telling van het filter tonen
+</script>
+</body>
+</html>

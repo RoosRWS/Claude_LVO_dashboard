@@ -1,0 +1,12 @@
+Indicator;grens1;grens2;grens3;grens4
+Leeftijd;5;10;15;20
+Houdbaar;0.05;0.1;0.15;0.25
+Bodem;2019;2014;2007;1997
+ResolutieB;25;50;100;9999
+Resolutierest;5;10;25;50
+DuurB;2;1.5;1;0.5
+DuurC;0.28;0.43;0.57;0.71
+Output;6;3;0.5;0
+Reproduceerbaarheid;1;0.75;0.50;0.25
+Schadeslachtoffers;0.1;0.5;1;3
+Overstroomdopp;0.25;0.5;1;2.5
